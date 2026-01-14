@@ -1,0 +1,17 @@
+/* SalesPulse Chrome Extension - Content Script Styles */
+/* Note: Main styles are injected via JavaScript for better encapsulation */
+
+/* Additional overrides if needed for Freelancer.com specific issues */
+#salespulse-capture-btn {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+.salespulse-modal * {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  box-sizing: border-box;
+}
+
+/* Ensure modal is above all Freelancer elements */
+.salespulse-modal-overlay {
+  z-index: 2147483647 !important;
+}

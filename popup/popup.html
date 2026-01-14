@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SalesPulse</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+        <span>SalesPulse</span>
+      </div>
+      <button id="settings-btn" class="icon-btn" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Settings View -->
+    <div id="settings-view" class="view hidden">
+      <div class="section">
+        <h3>API Configuration</h3>
+        <div class="form-group">
+          <label for="api-url">API URL</label>
+          <input type="text" id="api-url" placeholder="http://localhost:8000/api/v1/extensions/crm">
+        </div>
+        <div class="form-group">
+          <label for="api-token">API Token</label>
+          <input type="password" id="api-token" placeholder="Enter your API token">
+          <small>Get your token from your administrator or check your user profile in SalesPulse CRM</small>
+        </div>
+        <button id="save-settings" class="btn btn-primary btn-block">Save Settings</button>
+        <button id="test-connection" class="btn btn-outline btn-block">Test Connection</button>
+      </div>
+      <div id="connection-status" class="status-message hidden"></div>
+    </div>
+
+    <!-- Not Connected View -->
+    <div id="not-connected-view" class="view hidden">
+      <div class="empty-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <path d="M12 8v4m0 4h.01"/>
+        </svg>
+        <h3>Not Connected</h3>
+        <p>Configure your API settings to start capturing leads</p>
+        <button id="goto-settings" class="btn btn-primary">Configure Settings</button>
+      </div>
+    </div>
+
+    <!-- Main View - Connection Status Only -->
+    <div id="main-view" class="view hidden">
+      <!-- User Info -->
+      <div class="user-info">
+        <div class="user-avatar" id="user-avatar">U</div>
+        <div class="user-details">
+          <span class="user-name" id="user-name">Loading...</span>
+          <span class="user-status connected">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="12" r="10"/>
+            </svg>
+            Connected
+          </span>
+        </div>
+      </div>
+
+      <!-- Connection Status Section -->
+      <div class="status-section">
+        <div class="status-card success">
+          <div class="status-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+              <path d="M22 4L12 14.01l-3-3"/>
+            </svg>
+          </div>
+          <div class="status-content">
+            <h4>API Connected</h4>
+            <p id="api-endpoint">Connected to CRM</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Instructions -->
+      <div class="instructions-section">
+        <h4>How to Capture Leads</h4>
+        <ol class="instructions-list">
+          <li>Navigate to a Freelancer.com message thread</li>
+          <li>Look for the <strong>"Save Lead"</strong> button in the right sidebar</li>
+          <li>Click it to open the lead capture form</li>
+          <li>Review auto-filled data and save</li>
+        </ol>
+      </div>
+
+      <!-- Quick Stats -->
+      <div class="stats-section" id="stats-section">
+        <div class="stat-item">
+          <span class="stat-value" id="total-leads">-</span>
+          <span class="stat-label">Your Leads</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value" id="total-customers">-</span>
+          <span class="stat-label">Customers</span>
+        </div>
+      </div>
+
+      <!-- Open CRM Button -->
+      <a href="#" id="open-crm" class="btn btn-outline btn-block" target="_blank">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+          <path d="M15 3h6v6"/>
+          <path d="M10 14L21 3"/>
+        </svg>
+        Open CRM Dashboard
+      </a>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading" class="loading-overlay hidden">
+      <div class="spinner"></div>
+      <span>Please wait...</span>
+    </div>
+
+    <!-- Error Message -->
+    <div id="error-message" class="error-toast hidden">
+      <span id="error-text"></span>
+      <button id="close-error" class="close-btn">&times;</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
