@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Production build output
+production_build/
+*.zip
+
+# Error/debug files
+error.txt
+error*.txt
+error.png
+error*.png
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Package lock (optional - uncomment if you want to ignore)
+# package-lock.json

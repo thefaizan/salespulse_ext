@@ -2,9 +2,11 @@
 
 class SalesPulseInjector {
   constructor() {
-    this.apiUrl = '';
+    this.baseUrl = '';
     this.apiToken = '';
     this.stages = [];
+    this.currencies = [];
+    this.baseCurrency = 'USD';
     this.buttonInjected = false;
     this.observerActive = false;
     this.profileDataCache = {};
@@ -18,7 +20,18 @@ class SalesPulseInjector {
     this.widgetData = null; // Data extracted from chat widget
     this.pendingChatWidgetForBack = null; // Chat widget to return to after modal closes
 
+    // API path is hardcoded
+    this.apiPath = '/api/v1/extensions/crm';
+
     this.init();
+  }
+
+  // Get full API URL from base URL
+  getApiUrl() {
+    if (!this.baseUrl) return '';
+    // Remove trailing slash from base URL if present
+    const base = this.baseUrl.replace(/\/+$/, '');
+    return `${base}${this.apiPath}`;
   }
 
   async init() {
@@ -31,7 +44,7 @@ class SalesPulseInjector {
 
   async loadSettings() {
     // If already loaded, return cached values
-    if (this.apiUrl && this.apiToken) {
+    if (this.baseUrl && this.apiToken) {
       return Promise.resolve();
     }
 
@@ -45,14 +58,14 @@ class SalesPulseInjector {
           return;
         }
 
-        chrome.storage.local.get(['apiUrl', 'apiToken'], (result) => {
+        chrome.storage.local.get(['baseUrl', 'apiToken'], (result) => {
           if (chrome.runtime.lastError) {
             console.warn('SalesPulse: Extension context invalidated. Please refresh the page.');
             this.contextInvalidated = true;
             resolve();
             return;
           }
-          this.apiUrl = result.apiUrl || '';
+          this.baseUrl = result.baseUrl || '';
           this.apiToken = result.apiToken || '';
           resolve();
         });
@@ -636,6 +649,43 @@ class SalesPulseInjector {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  // Helper function to format date as "11 Sep 2025"
+  formatDate(dateStr) {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return dateStr;
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const day = date.getDate();
+      const month = months[date.getMonth()];
+      const year = date.getFullYear();
+      return `${day} ${month} ${year}`;
+    } catch (e) {
+      return dateStr;
+    }
+  }
+
+  // Helper function to format datetime as "11 Sep 2025, 2:30 PM"
+  formatDateTime(dateStr) {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return dateStr;
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const day = date.getDate();
+      const month = months[date.getMonth()];
+      const year = date.getFullYear();
+      let hours = date.getHours();
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      return `${day} ${month} ${year}, ${hours}:${minutes} ${ampm}`;
+    } catch (e) {
+      return dateStr;
+    }
+  }
+
   // Click the back button to return to chat view after modal closes
   clickBackButtonToReturnToChat() {
     if (!this.pendingChatWidgetForBack) {
@@ -690,14 +740,14 @@ class SalesPulseInjector {
   async checkExistingLeadForWidget(widget, username, buttonContainer) {
     const btn = buttonContainer.querySelector('button');
 
-    if (!this.apiUrl || !this.apiToken) {
+    if (!this.baseUrl || !this.apiToken) {
       this.updateWidgetButtonState(btn, false, null);
       return;
     }
 
     try {
       // Check by username since we don't have the chat URL
-      const response = await fetch(`${this.apiUrl}/customers/check?freelancer_username=${encodeURIComponent(username)}`, {
+      const response = await fetch(`${this.getApiUrl()}/customers/check?freelancer_username=${encodeURIComponent(username)}`, {
         headers: {
           'Authorization': `Bearer ${this.apiToken}`,
           'Accept': 'application/json'
@@ -849,15 +899,16 @@ class SalesPulseInjector {
       this.isEditMode = false;
     }
 
-    // Load stages and render modal
+    // Load stages, currencies and render modal
     await this.loadStages();
+    await this.loadCurrencies();
     this.renderModal();
   }
 
   // Fetch fresh lead data from API for edit mode
   async fetchFreshLeadData(username) {
     try {
-      const response = await fetch(`${this.apiUrl}/customers/check?freelancer_username=${encodeURIComponent(username)}`, {
+      const response = await fetch(`${this.getApiUrl()}/customers/check?freelancer_username=${encodeURIComponent(username)}`, {
         headers: {
           'Authorization': `Bearer ${this.apiToken}`,
           'Accept': 'application/json'
@@ -874,11 +925,13 @@ class SalesPulseInjector {
               id: lead.id,
               title: lead.title,
               amount: lead.amount,
+              currency: lead.currency || 'USD',
               description: lead.description,
               freelancer_chat_url: lead.freelancer_chat_url,
               project_url: lead.project_url,
               lead_stage_id: lead.lead_stage_id,
               stage: lead.stage,
+              updated_at: lead.updated_at,
               customer: data.customer
             };
             this.isEditMode = true;
@@ -913,11 +966,13 @@ class SalesPulseInjector {
           id: existingLead.id,
           title: existingLead.title,
           amount: existingLead.amount,
+          currency: existingLead.currency || 'USD',
           description: existingLead.description,
           freelancer_chat_url: existingLead.freelancer_chat_url,
           project_url: existingLead.project_url,
           lead_stage_id: existingLead.lead_stage_id,
           stage: existingLead.stage,
+          updated_at: existingLead.updated_at,
           customer: existingCustomer
         };
         this.isEditMode = true;
@@ -1208,14 +1263,14 @@ class SalesPulseInjector {
   }
 
   async checkExistingLead() {
-    if (!this.apiUrl || !this.apiToken) {
+    if (!this.baseUrl || !this.apiToken) {
       this.existingLead = null;
       this.isEditMode = false;
       return;
     }
 
     try {
-      const response = await fetch(`${this.apiUrl}/leads/check?chat_url=${encodeURIComponent(this.currentChatUrl)}`, {
+      const response = await fetch(`${this.getApiUrl()}/leads/check?chat_url=${encodeURIComponent(this.currentChatUrl)}`, {
         headers: {
           'Authorization': `Bearer ${this.apiToken}`,
           'Accept': 'application/json'
@@ -1677,6 +1732,20 @@ class SalesPulseInjector {
         margin-bottom: 16px;
       }
 
+      /* Updated At Badge */
+      .salespulse-updated-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        background: #fef3c7;
+        color: #92400e;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 500;
+        margin-bottom: 16px;
+      }
+
       /* Loading Profile Badge */
       .salespulse-loading-badge {
         display: inline-flex;
@@ -1928,7 +1997,8 @@ class SalesPulseInjector {
     const profileData = {
       country: '',
       joinedDate: '',
-      joinedDateISO: ''
+      joinedDateISO: '',
+      avatarUrl: ''
     };
 
     // Country code to name mapping
@@ -1950,7 +2020,8 @@ class SalesPulseInjector {
     try {
       // Method 1: Try Freelancer's internal API
       console.log('SalesPulse: Fetching profile via API for', username);
-      const apiUrl = `https://www.freelancer.com/api/users/0.1/users?usernames[]=${encodeURIComponent(username)}&compact=true`;
+      // Note: avatar=true is needed to get avatar data, compact=true may exclude it
+      const apiUrl = `https://www.freelancer.com/api/users/0.1/users?usernames[]=${encodeURIComponent(username)}&avatar=true`;
 
       const response = await fetch(apiUrl, {
         method: 'GET',
@@ -1990,6 +2061,35 @@ class SalesPulseInjector {
                 console.log('SalesPulse: Found joined date via API:', profileData.joinedDate);
               }
             }
+
+            // Get avatar URL - try different fields that Freelancer API might use
+            // Log full user object for debugging
+            console.log('SalesPulse: Full user object:', JSON.stringify(user, null, 2));
+
+            if (user.avatar_large_cdn) {
+              profileData.avatarUrl = user.avatar_large_cdn;
+              console.log('SalesPulse: Found avatar via API (avatar_large_cdn):', profileData.avatarUrl);
+            } else if (user.avatar_cdn) {
+              profileData.avatarUrl = user.avatar_cdn;
+              console.log('SalesPulse: Found avatar via API (avatar_cdn):', profileData.avatarUrl);
+            } else if (user.avatar_large) {
+              profileData.avatarUrl = user.avatar_large;
+              console.log('SalesPulse: Found avatar via API (avatar_large):', profileData.avatarUrl);
+            } else if (user.avatar) {
+              profileData.avatarUrl = user.avatar;
+              console.log('SalesPulse: Found avatar via API (avatar):', profileData.avatarUrl);
+            } else if (user.profile_logo_url) {
+              profileData.avatarUrl = user.profile_logo_url;
+              console.log('SalesPulse: Found avatar via API (profile_logo_url):', profileData.avatarUrl);
+            } else {
+              console.log('SalesPulse: No avatar field found in user object');
+            }
+
+            // Normalize avatar URL - add https: if it's a protocol-relative URL
+            if (profileData.avatarUrl && profileData.avatarUrl.startsWith('//')) {
+              profileData.avatarUrl = 'https:' + profileData.avatarUrl;
+              console.log('SalesPulse: Normalized avatar URL to:', profileData.avatarUrl);
+            }
           }
         }
       } else {
@@ -1999,9 +2099,9 @@ class SalesPulseInjector {
       console.error('SalesPulse: Error fetching from API:', error);
     }
 
-    // Method 2: Fallback to scraping profile page HTML if API didn't work
-    if (!profileData.country || !profileData.joinedDate) {
-      console.log('SalesPulse: Trying HTML scraping fallback');
+    // Method 2: Fallback to scraping profile page HTML if API didn't work or missing data
+    if (!profileData.country || !profileData.joinedDate || !profileData.avatarUrl) {
+      console.log('SalesPulse: Trying HTML scraping fallback for missing data');
       try {
         const profileUrl = `https://www.freelancer.com/u/${username}`;
         const response = await fetch(profileUrl, {
@@ -2036,6 +2136,34 @@ class SalesPulseInjector {
               console.log('SalesPulse: Found joined date from HTML:', profileData.joinedDate);
             }
           }
+
+          // Try to find avatar/profile picture from HTML
+          if (!profileData.avatarUrl) {
+            // Look for profile image in various common patterns
+            const avatarPatterns = [
+              // cdn.freelancer.com avatar URLs
+              /https:\/\/cdn\d*\.freelancer\.com\/[^"'\s]+(?:avatar|profile)[^"'\s]*\.(?:jpg|jpeg|png|gif|webp)/i,
+              // Profile image in img tag with class
+              /<img[^>]+class="[^"]*(?:profile|avatar|user)[^"]*"[^>]+src="([^"]+)"/i,
+              // Profile image src pattern
+              /(?:profile|avatar|user)(?:_|-)?(?:image|img|pic|photo)[^"']*["']\s*:\s*["']([^"']+)/i,
+              // Any cdn.freelancer.com image URL that looks like a profile pic
+              /(https:\/\/cdn\d*\.freelancer\.com\/u\/\d+\/[^"'\s]+\.(?:jpg|jpeg|png|gif|webp))/i
+            ];
+
+            for (const pattern of avatarPatterns) {
+              const match = html.match(pattern);
+              if (match) {
+                profileData.avatarUrl = match[1] || match[0];
+                // Clean up the URL if needed
+                if (profileData.avatarUrl && !profileData.avatarUrl.startsWith('http')) {
+                  profileData.avatarUrl = 'https://www.freelancer.com' + profileData.avatarUrl;
+                }
+                console.log('SalesPulse: Found avatar from HTML:', profileData.avatarUrl);
+                break;
+              }
+            }
+          }
         }
       } catch (error) {
         console.error('SalesPulse: Error scraping profile:', error);
@@ -2045,7 +2173,7 @@ class SalesPulseInjector {
     console.log('SalesPulse: Final profile data:', profileData);
 
     // Cache the result if we found anything
-    if (profileData.country || profileData.joinedDate) {
+    if (profileData.country || profileData.joinedDate || profileData.avatarUrl) {
       this.profileDataCache[username] = profileData;
     }
 
@@ -2053,10 +2181,10 @@ class SalesPulseInjector {
   }
 
   async loadStages() {
-    if (!this.apiUrl || !this.apiToken) return;
+    if (!this.baseUrl || !this.apiToken) return;
 
     try {
-      const response = await fetch(`${this.apiUrl}/stages`, {
+      const response = await fetch(`${this.getApiUrl()}/stages`, {
         headers: {
           'Authorization': `Bearer ${this.apiToken}`,
           'Accept': 'application/json'
@@ -2069,6 +2197,27 @@ class SalesPulseInjector {
       }
     } catch (error) {
       console.error('SalesPulse: Failed to load stages', error);
+    }
+  }
+
+  async loadCurrencies() {
+    if (!this.baseUrl || !this.apiToken) return;
+
+    try {
+      const response = await fetch(`${this.getApiUrl()}/currencies`, {
+        headers: {
+          'Authorization': `Bearer ${this.apiToken}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        this.currencies = data.currencies || [];
+        this.baseCurrency = data.base_currency || 'USD';
+      }
+    } catch (error) {
+      console.error('SalesPulse: Failed to load currencies', error);
     }
   }
 
@@ -2099,8 +2248,9 @@ class SalesPulseInjector {
       await this.fetchFreshInboxLeadData();
     }
 
-    // Load stages and render modal
+    // Load stages, currencies and render modal
     await this.loadStages();
+    await this.loadCurrencies();
     this.renderModal();
   }
 
@@ -2109,7 +2259,7 @@ class SalesPulseInjector {
     if (!this.currentChatUrl) return;
 
     try {
-      const response = await fetch(`${this.apiUrl}/leads/check?chat_url=${encodeURIComponent(this.currentChatUrl)}`, {
+      const response = await fetch(`${this.getApiUrl()}/leads/check?chat_url=${encodeURIComponent(this.currentChatUrl)}`, {
         headers: {
           'Authorization': `Bearer ${this.apiToken}`,
           'Accept': 'application/json'
@@ -2123,11 +2273,13 @@ class SalesPulseInjector {
             id: data.lead.id,
             title: data.lead.title,
             amount: data.lead.amount,
+            currency: data.lead.currency || 'USD',
             description: data.lead.description,
             freelancer_chat_url: data.lead.freelancer_chat_url,
             project_url: data.lead.project_url,
             lead_stage_id: data.lead.lead_stage_id,
             stage: data.lead.stage,
+            updated_at: data.lead.updated_at,
             customer: data.lead.customer
           };
           this.isEditMode = true;
@@ -2205,6 +2357,7 @@ class SalesPulseInjector {
     let formData = pageData;
     if (this.isEditMode && this.existingLead) {
       formData = {
+        leadId: this.existingLead.id || '',
         customerName: this.existingLead.customer?.name || pageData.customerName,
         freelancerUsername: this.existingLead.customer?.freelancer_username || pageData.freelancerUsername,
         projectTitle: this.existingLead.title || pageData.projectTitle,
@@ -2212,9 +2365,12 @@ class SalesPulseInjector {
         projectUrl: this.existingLead.project_url || pageData.projectUrl,
         country: this.existingLead.customer?.country || '',
         joinedDate: this.existingLead.customer?.freelancer_join_date || '',
+        avatarUrl: this.existingLead.customer?.avatar_url || '',
         amount: this.existingLead.amount || '',
+        currency: this.existingLead.currency || 'USD',
         stageId: this.existingLead.lead_stage_id || '',
-        description: this.existingLead.description || ''
+        description: this.existingLead.description || '',
+        updatedAt: this.existingLead.updated_at || ''
       };
     }
 
@@ -2271,8 +2427,17 @@ class SalesPulseInjector {
                   <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
                   <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
                 </svg>
-                Editing existing lead
+                Editing Lead #${formData.leadId || ''}
               </div>
+              ${formData.updatedAt ? `
+              <div class="salespulse-updated-badge">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <path d="M12 6v6l4 2"/>
+                </svg>
+                Updated: ${this.formatDateTime(formData.updatedAt)}
+              </div>
+              ` : ''}
             ` : formData.customerName ? `
               <div class="salespulse-detected-badge">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2314,9 +2479,11 @@ class SalesPulseInjector {
             <div class="salespulse-form-group">
               <label>Member Since</label>
               <input type="text" class="salespulse-form-input" id="sp-joined-date"
-                     value="${this.escapeHtml(formData.joinedDate || '')}" placeholder="${this.isEditMode ? 'Not set' : 'Loading...'}" readonly>
+                     value="${this.escapeHtml(this.formatDate(formData.joinedDate) || '')}" placeholder="${this.isEditMode ? 'Not set' : 'Loading...'}" readonly>
             </div>
           </div>
+          <!-- Hidden input for avatar URL -->
+          <input type="hidden" id="sp-avatar-url" value="${this.escapeHtml(formData.avatarUrl || '')}">
 
           <div class="salespulse-section-title">Lead Information</div>
 
@@ -2327,9 +2494,16 @@ class SalesPulseInjector {
                      value="${this.escapeHtml(formData.projectTitle)}" placeholder="e.g., Website Project">
             </div>
             <div class="salespulse-form-group">
-              <label>Amount ($)</label>
-              <input type="number" class="salespulse-form-input" id="sp-amount"
-                     value="${formData.amount || ''}" placeholder="0.00" step="0.01" min="0">
+              <label>Amount</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="number" class="salespulse-form-input" id="sp-amount" style="flex: 1;"
+                       value="${formData.amount || ''}" placeholder="0.00" step="0.01" min="0">
+                <select class="salespulse-form-select" id="sp-currency" style="width: 90px;">
+                  ${this.currencies.length > 0
+                    ? this.currencies.map(c => `<option value="${c.code}" ${(formData.currency || 'USD') === c.code ? 'selected' : ''}>${c.code}</option>`).join('')
+                    : '<option value="USD" selected>USD</option>'}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -2443,6 +2617,12 @@ class SalesPulseInjector {
           joinedInput.dataset.isoDate = profileData.joinedDateISO;
         }
       }
+      // Set avatar URL if found
+      const avatarInput = document.getElementById('sp-avatar-url');
+      if (avatarInput && profileData.avatarUrl) {
+        avatarInput.value = profileData.avatarUrl;
+        console.log('SalesPulse: Set avatar URL in form:', profileData.avatarUrl);
+      }
     } else {
       if (countryInput && !countryInput.value) {
         countryInput.value = '';
@@ -2506,10 +2686,12 @@ class SalesPulseInjector {
     const joinedDate = joinedDateInput.dataset.isoDate || '';
     const leadTitle = document.getElementById('sp-lead-title').value.trim();
     const amount = document.getElementById('sp-amount').value;
+    const currency = document.getElementById('sp-currency').value;
     const stageId = document.getElementById('sp-stage').value;
     const chatUrl = document.getElementById('sp-chat-url').value.trim();
     const projectUrl = document.getElementById('sp-project-url').value.trim();
     const notes = document.getElementById('sp-notes').value.trim();
+    const avatarUrl = document.getElementById('sp-avatar-url')?.value || '';
 
     if (!customerName) {
       this.showError('Customer name is required');
@@ -2528,22 +2710,24 @@ class SalesPulseInjector {
         customer_name: customerName,
         freelancer_username: username || null,
         freelancer_profile_url: username ? `https://www.freelancer.com/u/${username}` : null,
+        avatar_url: avatarUrl || null,
         country: country || null,
         freelancer_join_date: joinedDate || null,
         lead_title: leadTitle || null,
         lead_amount: amount ? parseFloat(amount) : null,
+        lead_currency: currency || 'USD',
         lead_stage_id: stageId ? parseInt(stageId) : null,
         freelancer_chat_url: chatUrl || null,
         project_url: projectUrl || null,
         description: notes || null
       };
 
-      let url = `${this.apiUrl}/leads`;
+      let url = `${this.getApiUrl()}/leads`;
       let method = 'POST';
 
       // If editing, use PUT and include lead ID in URL
       if (this.isEditMode && this.existingLead) {
-        url = `${this.apiUrl}/leads/${this.existingLead.id}`;
+        url = `${this.getApiUrl()}/leads/${this.existingLead.id}`;
         method = 'PUT';
       }
 
@@ -2569,6 +2753,7 @@ class SalesPulseInjector {
           id: data.lead.id,
           title: data.lead.title,
           amount: data.lead.amount,
+          currency: data.lead.currency || 'USD',
           description: data.lead.description,
           freelancer_chat_url: data.lead.freelancer_chat_url,
           project_url: data.lead.project_url,

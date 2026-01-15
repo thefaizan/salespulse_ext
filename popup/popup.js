@@ -3,11 +3,22 @@
 
 class SalesPulsePopup {
   constructor() {
-    this.apiUrl = '';
+    this.baseUrl = '';
     this.apiToken = '';
     this.user = null;
 
+    // API path is hardcoded
+    this.apiPath = '/api/v1/extensions/crm';
+
     this.init();
+  }
+
+  // Get full API URL from base URL
+  getApiUrl() {
+    if (!this.baseUrl) return '';
+    // Remove trailing slash from base URL if present
+    const base = this.baseUrl.replace(/\/+$/, '');
+    return `${base}${this.apiPath}`;
   }
 
   async init() {
@@ -20,17 +31,17 @@ class SalesPulsePopup {
   // Storage helpers
   async loadSettings() {
     return new Promise((resolve) => {
-      chrome.storage.local.get(['apiUrl', 'apiToken'], (result) => {
-        this.apiUrl = result.apiUrl || '';
+      chrome.storage.local.get(['baseUrl', 'apiToken'], (result) => {
+        this.baseUrl = result.baseUrl || '';
         this.apiToken = result.apiToken || '';
         resolve();
       });
     });
   }
 
-  async saveSettings(apiUrl, apiToken) {
+  async saveSettings(baseUrl, apiToken) {
     return new Promise((resolve) => {
-      chrome.storage.local.set({ apiUrl, apiToken }, resolve);
+      chrome.storage.local.set({ baseUrl, apiToken }, resolve);
     });
   }
 
@@ -64,10 +75,8 @@ class SalesPulsePopup {
     // Open CRM link
     document.getElementById('open-crm').addEventListener('click', (e) => {
       e.preventDefault();
-      if (this.apiUrl) {
-        // Extract base URL from API URL
-        const baseUrl = this.apiUrl.replace(/\/api\/v1\/extensions\/crm\/?$/, '');
-        chrome.tabs.create({ url: baseUrl || 'http://localhost:8000' });
+      if (this.baseUrl) {
+        chrome.tabs.create({ url: this.baseUrl });
       }
     });
   }
@@ -83,7 +92,7 @@ class SalesPulsePopup {
 
     // Populate settings fields when showing settings
     if (viewName === 'settings') {
-      document.getElementById('api-url').value = this.apiUrl;
+      document.getElementById('api-url').value = this.baseUrl;
       document.getElementById('api-token').value = this.apiToken;
     }
   }
@@ -112,7 +121,7 @@ class SalesPulsePopup {
 
   // API methods
   async apiRequest(endpoint, options = {}) {
-    const url = `${this.apiUrl}${endpoint}`;
+    const url = `${this.getApiUrl()}${endpoint}`;
     const headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -141,7 +150,7 @@ class SalesPulsePopup {
   }
 
   async checkConnection() {
-    if (!this.apiUrl || !this.apiToken) {
+    if (!this.baseUrl || !this.apiToken) {
       this.user = null;
       return false;
     }
@@ -158,17 +167,20 @@ class SalesPulsePopup {
 
   // Settings handlers
   async handleSaveSettings() {
-    const apiUrl = document.getElementById('api-url').value.trim();
+    let baseUrl = document.getElementById('api-url').value.trim();
     const apiToken = document.getElementById('api-token').value.trim();
 
-    if (!apiUrl || !apiToken) {
-      this.showError('Please fill in both API URL and Token');
+    if (!baseUrl || !apiToken) {
+      this.showError('Please fill in both CRM Base URL and Token');
       return;
     }
 
-    this.apiUrl = apiUrl;
+    // Normalize base URL - remove trailing slashes and any API path if user accidentally included it
+    baseUrl = baseUrl.replace(/\/+$/, '').replace(/\/api\/v1\/extensions\/crm\/?$/, '');
+
+    this.baseUrl = baseUrl;
     this.apiToken = apiToken;
-    await this.saveSettings(apiUrl, apiToken);
+    await this.saveSettings(baseUrl, apiToken);
 
     // Test the connection
     await this.testConnection();
@@ -224,11 +236,10 @@ class SalesPulsePopup {
     document.getElementById('user-name').textContent = this.user.name;
 
     // Update API endpoint display
-    const baseUrl = this.apiUrl.replace(/\/api\/v1\/extensions\/crm\/?$/, '') || 'CRM Server';
-    document.getElementById('api-endpoint').textContent = baseUrl;
+    document.getElementById('api-endpoint').textContent = this.baseUrl || 'CRM Server';
 
     // Update CRM link
-    document.getElementById('open-crm').href = baseUrl;
+    document.getElementById('open-crm').href = this.baseUrl;
   }
 }
 

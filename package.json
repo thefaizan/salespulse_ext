@@ -1,0 +1,25 @@
+{
+  "name": "salespulse-extension",
+  "version": "1.0.0",
+  "description": "SalesPulse CRM Chrome Extension for Freelancer.com lead capture",
+  "main": "background/background.js",
+  "scripts": {
+    "build": "node build.js",
+    "clean": "rimraf production_build"
+  },
+  "keywords": [
+    "chrome-extension",
+    "crm",
+    "freelancer",
+    "salespulse"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "clean-css": "^5.3.3",
+    "html-minifier-terser": "^7.2.0",
+    "javascript-obfuscator": "^4.2.0",
+    "rimraf": "^5.0.5",
+    "terser": "^5.44.1"
+  }
+}
