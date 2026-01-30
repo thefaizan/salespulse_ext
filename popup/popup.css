@@ -551,3 +551,66 @@ body {
 .popup-container::-webkit-scrollbar-thumb:hover {
   background: #a1a1a1;
 }
+
+/* Update Banner */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.update-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #92400e;
+}
+
+.update-content svg {
+  color: #f59e0b;
+  flex-shrink: 0;
+}
+
+.update-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: none;
+  color: #92400e;
+  font-size: 16px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.btn-ghost:hover {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+/* Version Footer */
+.version-footer {
+  text-align: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.version-footer span {
+  font-size: 11px;
+  color: #9ca3af;
+}

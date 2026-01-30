@@ -6,6 +6,9 @@ class SalesPulsePopup {
     this.baseUrl = '';
     this.apiToken = '';
     this.user = null;
+    this.currentVersion = chrome.runtime.getManifest().version;
+    this.latestVersion = null;
+    this.downloadUrl = null;
 
     // API path is hardcoded
     this.apiPath = '/api/v1/extensions/crm';
@@ -25,13 +28,14 @@ class SalesPulsePopup {
     await this.loadSettings();
     this.bindEvents();
     await this.checkConnection();
+    await this.checkForUpdates();
     this.updateUI();
   }
 
-  // Storage helpers
+  // Storage helpers - using chrome.storage.sync for persistence across reinstalls
   async loadSettings() {
     return new Promise((resolve) => {
-      chrome.storage.local.get(['baseUrl', 'apiToken'], (result) => {
+      chrome.storage.sync.get(['baseUrl', 'apiToken'], (result) => {
         this.baseUrl = result.baseUrl || '';
         this.apiToken = result.apiToken || '';
         resolve();
@@ -41,8 +45,58 @@ class SalesPulsePopup {
 
   async saveSettings(baseUrl, apiToken) {
     return new Promise((resolve) => {
-      chrome.storage.local.set({ baseUrl, apiToken }, resolve);
+      chrome.storage.sync.set({ baseUrl, apiToken }, resolve);
     });
+  }
+
+  // Check for extension updates
+  async checkForUpdates() {
+    if (!this.baseUrl) return;
+
+    try {
+      const base = this.baseUrl.replace(/\/+$/, '');
+      const response = await fetch(`${base}${this.apiPath}/version`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.extension) {
+          this.latestVersion = data.extension.version;
+          this.downloadUrl = data.extension.download_url;
+
+          // Store update info for background checking
+          chrome.storage.local.set({
+            latestVersion: this.latestVersion,
+            downloadUrl: this.downloadUrl,
+            lastUpdateCheck: Date.now()
+          });
+        }
+      }
+    } catch (error) {
+      console.log('Update check failed:', error.message);
+    }
+  }
+
+  isUpdateAvailable() {
+    if (!this.latestVersion) return false;
+    return this.compareVersions(this.latestVersion, this.currentVersion) > 0;
+  }
+
+  compareVersions(v1, v2) {
+    const parts1 = v1.split('.').map(Number);
+    const parts2 = v2.split('.').map(Number);
+
+    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+      const p1 = parts1[i] || 0;
+      const p2 = parts2[i] || 0;
+      if (p1 > p2) return 1;
+      if (p1 < p2) return -1;
+    }
+    return 0;
   }
 
   // Event bindings
@@ -79,6 +133,27 @@ class SalesPulsePopup {
         chrome.tabs.create({ url: this.baseUrl });
       }
     });
+
+    // Download update button
+    const downloadBtn = document.getElementById('download-update');
+    if (downloadBtn) {
+      downloadBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (this.downloadUrl) {
+          chrome.tabs.create({ url: this.downloadUrl });
+        }
+      });
+    }
+
+    // Dismiss update button
+    const dismissBtn = document.getElementById('dismiss-update');
+    if (dismissBtn) {
+      dismissBtn.addEventListener('click', () => {
+        document.getElementById('update-banner').classList.add('hidden');
+        // Remember dismissal for this version
+        chrome.storage.local.set({ dismissedVersion: this.latestVersion });
+      });
+    }
   }
 
   // View management
@@ -199,6 +274,9 @@ class SalesPulsePopup {
         statusEl.classList.add('success');
         statusEl.textContent = `Connected as ${this.user.name}`;
 
+        // Also check for updates after successful connection
+        await this.checkForUpdates();
+
         // After short delay, go to main view
         setTimeout(() => {
           this.updateUI();
@@ -216,7 +294,7 @@ class SalesPulsePopup {
   }
 
   // UI update
-  updateUI() {
+  async updateUI() {
     if (!this.user) {
       this.showView('not-connected');
       return;
@@ -240,6 +318,26 @@ class SalesPulsePopup {
 
     // Update CRM link
     document.getElementById('open-crm').href = this.baseUrl;
+
+    // Update version display
+    const versionEl = document.getElementById('extension-version');
+    if (versionEl) {
+      versionEl.textContent = `v${this.currentVersion}`;
+    }
+
+    // Show update banner if update is available
+    const updateBanner = document.getElementById('update-banner');
+    if (updateBanner && this.isUpdateAvailable()) {
+      // Check if user dismissed this version
+      const result = await new Promise(resolve => {
+        chrome.storage.local.get(['dismissedVersion'], resolve);
+      });
+
+      if (result.dismissedVersion !== this.latestVersion) {
+        document.getElementById('new-version').textContent = this.latestVersion;
+        updateBanner.classList.remove('hidden');
+      }
+    }
   }
 }
 

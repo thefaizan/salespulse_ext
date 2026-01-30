@@ -56,14 +56,15 @@ class SalesPulseInjector {
     return new Promise((resolve) => {
       try {
         // Check if chrome.storage is still available (extension context valid)
-        if (!chrome?.storage?.local) {
+        // Use chrome.storage.sync for settings persistence across reinstalls
+        if (!chrome?.storage?.sync) {
           console.warn('SalesPulse: Extension context invalidated. Please refresh the page.');
           this.contextInvalidated = true;
           resolve();
           return;
         }
 
-        chrome.storage.local.get(['baseUrl', 'apiToken'], (result) => {
+        chrome.storage.sync.get(['baseUrl', 'apiToken'], (result) => {
           if (chrome.runtime.lastError) {
             console.warn('SalesPulse: Extension context invalidated. Please refresh the page.');
             this.contextInvalidated = true;

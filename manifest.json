@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SalesPulse - Freelancer Lead Capture",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Capture leads directly from Freelancer.com chats and save them to your SalesPulse CRM",
   "icons": {
     "16": "icons/icon16.png",
@@ -22,13 +22,16 @@
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
     "https://www.freelancer.com/*",
     "https://freelancer.com/*",
     "http://localhost:8000/*",
-    "http://127.0.0.1:8000/*"
+    "http://127.0.0.1:8000/*",
+    "https://*/*",
+    "http://*/*"
   ],
   "content_scripts": [
     {
