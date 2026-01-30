@@ -604,7 +604,10 @@ body {
 
 /* Version Footer */
 .version-footer {
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid #e5e7eb;
@@ -613,4 +616,31 @@ body {
 .version-footer span {
   font-size: 11px;
   color: #9ca3af;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-link:hover {
+  color: #6366f1;
+  background: #f3f4f6;
+}
+
+.btn-link.checking {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

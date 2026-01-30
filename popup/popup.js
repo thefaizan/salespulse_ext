@@ -154,6 +154,63 @@ class SalesPulsePopup {
         chrome.storage.local.set({ dismissedVersion: this.latestVersion });
       });
     }
+
+    // Manual check for updates button
+    const checkUpdatesBtn = document.getElementById('check-updates-btn');
+    if (checkUpdatesBtn) {
+      checkUpdatesBtn.addEventListener('click', async () => {
+        await this.manualCheckForUpdates();
+      });
+    }
+  }
+
+  // Manual update check with UI feedback
+  async manualCheckForUpdates() {
+    const btn = document.getElementById('check-updates-btn');
+    if (!btn || btn.classList.contains('checking')) return;
+
+    btn.classList.add('checking');
+
+    try {
+      await this.checkForUpdates();
+
+      if (this.isUpdateAvailable()) {
+        // Show update banner
+        const updateBanner = document.getElementById('update-banner');
+        if (updateBanner) {
+          document.getElementById('new-version').textContent = this.latestVersion;
+          updateBanner.classList.remove('hidden');
+          // Clear dismissed version so banner shows
+          chrome.storage.local.remove(['dismissedVersion']);
+        }
+        this.showSuccess(`Update available: v${this.latestVersion}`);
+      } else {
+        this.showSuccess('You have the latest version!');
+      }
+    } catch (error) {
+      this.showError('Failed to check for updates');
+    } finally {
+      btn.classList.remove('checking');
+    }
+  }
+
+  showSuccess(message) {
+    const errorEl = document.getElementById('error-message');
+    const errorText = document.getElementById('error-text');
+    errorText.textContent = message;
+    errorEl.classList.remove('hidden');
+    errorEl.style.background = '#d1fae5';
+    errorEl.style.borderColor = '#6ee7b7';
+    errorEl.style.color = '#065f46';
+
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+      this.hideError();
+      // Reset styles
+      errorEl.style.background = '';
+      errorEl.style.borderColor = '';
+      errorEl.style.color = '';
+    }, 3000);
   }
 
   // View management
