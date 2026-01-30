@@ -12,6 +12,8 @@ class SalesPulseInjector {
     this.profileDataCache = {};
     this.existingLead = null;
     this.isEditMode = false;
+    this.isOtherOwner = false;
+    this.otherOwnerName = '';
     this.currentChatUrl = '';
     this.currentUsername = ''; // For widget-based lead checking
     this.currentWidgetBtnContainer = null; // Reference to current widget button container
@@ -19,6 +21,8 @@ class SalesPulseInjector {
     this.isWidgetMode = false; // Track if we're working with chat widget
     this.widgetData = null; // Data extracted from chat widget
     this.pendingChatWidgetForBack = null; // Chat widget to return to after modal closes
+    this.listBadgeDebounceTimer = null; // Debounce timer for list badge updates
+    this.listBadgeProcessing = false; // Flag to prevent concurrent processing
 
     // API path is hardcoded
     this.apiPath = '/api/v1/extensions/crm';
@@ -40,6 +44,7 @@ class SalesPulseInjector {
     this.observePageChanges();
     this.tryInjectButton();
     this.tryInjectWidgetButtons();
+    this.tryInjectListBadges();
   }
 
   async loadSettings() {
@@ -85,6 +90,7 @@ class SalesPulseInjector {
     const observer = new MutationObserver(() => {
       this.tryInjectButton();
       this.tryInjectWidgetButtons(); // Also check for chat widgets
+      this.tryInjectListBadges(); // Also update list badges
     });
 
     observer.observe(document.body, {
@@ -106,6 +112,8 @@ class SalesPulseInjector {
         this.buttonInjected = false;
         this.existingLead = null;
         this.isEditMode = false;
+        this.isOtherOwner = false;
+        this.otherOwnerName = '';
         this.currentChatUrl = '';
         this.currentUsername = '';
 
@@ -115,7 +123,180 @@ class SalesPulseInjector {
 
       // Also check for new chat widgets periodically
       this.tryInjectWidgetButtons();
+
+      // Also check for list badge updates
+      this.tryInjectListBadges();
     }, 500); // Check more frequently for smoother UX
+  }
+
+  // Inject badges into the message list (left column)
+  tryInjectListBadges() {
+    // Debounce to prevent excessive API calls
+    if (this.listBadgeDebounceTimer) {
+      clearTimeout(this.listBadgeDebounceTimer);
+    }
+
+    this.listBadgeDebounceTimer = setTimeout(() => {
+      this.processListBadges();
+    }, 300);
+  }
+
+  // Process list badges (actual implementation)
+  async processListBadges() {
+    // Only inject on messages pages
+    if (!location.pathname.includes('/messages')) return;
+
+    // Don't proceed if no API credentials
+    if (!this.baseUrl || !this.apiToken) return;
+
+    // Prevent concurrent processing
+    if (this.listBadgeProcessing) return;
+    this.listBadgeProcessing = true;
+
+    try {
+      // Find all thread list items that don't have badges yet
+      const threadItems = document.querySelectorAll('fl-list-item[fltrackinglabel="MessagingThreadListItem"]');
+      if (threadItems.length === 0) {
+        return;
+      }
+
+      // Collect usernames that need checking
+      const usernamesToCheck = [];
+      const itemsToProcess = [];
+
+      threadItems.forEach(item => {
+        // Skip if already has a badge container
+        if (item.querySelector('.salespulse-list-badge-container')) return;
+
+        // Find the username in the thread item
+        const usernameEl = item.querySelector('app-messaging-thread-list-item-name p:not(.Name)');
+        if (!usernameEl) return;
+
+        const usernameText = usernameEl.textContent.trim();
+        if (!usernameText.startsWith('@')) return;
+
+        const username = usernameText.substring(1); // Remove @ prefix
+        if (!username) return;
+
+        usernamesToCheck.push(username);
+        itemsToProcess.push({ item, username });
+      });
+
+      if (usernamesToCheck.length === 0) return;
+
+      // Add loading badges first
+      itemsToProcess.forEach(({ item, username }) => {
+        this.addListLoadingBadge(item, username);
+      });
+
+      // Batch check leads
+      const response = await fetch(`${this.getApiUrl()}/leads/batch-check?${usernamesToCheck.map(u => `usernames[]=${encodeURIComponent(u)}`).join('&')}`, {
+        headers: {
+          'Authorization': `Bearer ${this.apiToken}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.results) {
+          // Update badges with actual data
+          itemsToProcess.forEach(({ item, username }) => {
+            const result = data.results[username];
+            this.updateListBadge(item, username, result);
+          });
+        }
+      } else {
+        // Remove loading badges on error
+        itemsToProcess.forEach(({ item }) => {
+          const badge = item.querySelector('.salespulse-list-badge-container');
+          if (badge) badge.remove();
+        });
+      }
+    } catch (error) {
+      console.error('SalesPulse: Error batch checking leads:', error);
+    } finally {
+      this.listBadgeProcessing = false;
+    }
+  }
+
+  // Force refresh list badges (e.g., after saving a lead)
+  refreshListBadges() {
+    // Remove all existing badges to force refresh
+    const badges = document.querySelectorAll('.salespulse-list-badge-container');
+    badges.forEach(badge => badge.remove());
+
+    // Re-process badges
+    this.listBadgeProcessing = false;
+    this.tryInjectListBadges();
+  }
+
+  // Add loading badge to a list item
+  addListLoadingBadge(item, username) {
+    // Find the container where we'll add the badge
+    const subtitleContainer = item.querySelector('.Container.Subtitle');
+    if (!subtitleContainer) return;
+
+    // Check if badge already exists
+    if (item.querySelector('.salespulse-list-badge-container')) return;
+
+    const badgeContainer = document.createElement('div');
+    badgeContainer.className = 'salespulse-list-badge-container';
+    badgeContainer.dataset.username = username;
+    badgeContainer.innerHTML = `
+      <span class="salespulse-list-loading-badge">
+        <span class="sp-list-spinner"></span>
+      </span>
+    `;
+
+    subtitleContainer.appendChild(badgeContainer);
+  }
+
+  // Update list badge with actual data
+  updateListBadge(item, username, result) {
+    let badgeContainer = item.querySelector('.salespulse-list-badge-container');
+
+    if (!badgeContainer) {
+      // Create container if doesn't exist
+      const subtitleContainer = item.querySelector('.Container.Subtitle');
+      if (!subtitleContainer) return;
+
+      badgeContainer = document.createElement('div');
+      badgeContainer.className = 'salespulse-list-badge-container';
+      badgeContainer.dataset.username = username;
+      subtitleContainer.appendChild(badgeContainer);
+    }
+
+    if (!result || !result.exists) {
+      // Lead doesn't exist - show Fresh badge
+      badgeContainer.innerHTML = `
+        <span class="salespulse-list-fresh-badge" title="New lead - not yet saved to CRM">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+          </svg>
+          Fresh
+        </span>
+      `;
+    } else {
+      // Lead exists - show stage badge and owner
+      const stageBadge = result.stage ? `
+        <span class="salespulse-list-stage-badge" style="background-color: ${result.stage.color || '#6b7280'}" title="Lead Stage: ${this.escapeHtml(result.stage.name)}">
+          ${this.escapeHtml(result.stage.name)}
+        </span>
+      ` : '';
+
+      const ownerBadge = result.owner_first_name ? `
+        <span class="salespulse-list-owner-badge" title="Assigned to ${this.escapeHtml(result.owner_first_name)}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+          ${this.escapeHtml(result.owner_first_name)}
+        </span>
+      ` : '';
+
+      badgeContainer.innerHTML = stageBadge + ownerBadge;
+    }
   }
 
   // Remove the injected button
@@ -741,7 +922,7 @@ class SalesPulseInjector {
     const btn = buttonContainer.querySelector('button');
 
     if (!this.baseUrl || !this.apiToken) {
-      this.updateWidgetButtonState(btn, false, null);
+      this.updateWidgetButtonState(btn, 'save', null);
       return;
     }
 
@@ -760,11 +941,21 @@ class SalesPulseInjector {
           // Customer exists, check if they have recent leads
           const leads = data.customer.leads || [];
           if (leads.length > 0) {
-            // Store the most recent lead for editing
-            buttonContainer.dataset.existingLead = JSON.stringify(leads[0]);
-            buttonContainer.dataset.existingCustomer = JSON.stringify(data.customer);
-            this.updateWidgetButtonState(btn, true, leads[0]);
-            console.log('SalesPulse: Found existing lead for widget:', username);
+            const lead = leads[0];
+
+            // Check if this lead belongs to the current user or another user
+            if (lead.is_owned_by_current_user) {
+              // Lead belongs to current user - show Edit Lead
+              buttonContainer.dataset.existingLead = JSON.stringify(lead);
+              buttonContainer.dataset.existingCustomer = JSON.stringify(data.customer);
+              this.updateWidgetButtonState(btn, 'edit', lead);
+              console.log('SalesPulse: Found existing lead (owned by current user) for widget:', username);
+            } else {
+              // Lead belongs to another user - show owner's name
+              buttonContainer.dataset.otherOwner = lead.owner_first_name || 'Other';
+              this.updateWidgetButtonState(btn, 'other_owner', lead);
+              console.log('SalesPulse: Lead owned by another user:', lead.owner_first_name, 'for widget:', username);
+            }
             return;
           }
         }
@@ -773,19 +964,21 @@ class SalesPulseInjector {
       console.error('SalesPulse: Error checking lead for widget:', error);
     }
 
-    this.updateWidgetButtonState(btn, false, null);
+    this.updateWidgetButtonState(btn, 'save', null);
   }
 
-  // Update widget button state (Save Lead vs Edit Lead)
-  updateWidgetButtonState(btn, isEditMode, lead) {
-    btn.disabled = false;
+  // Update widget button state (Save Lead, Edit Lead, or Other Owner)
+  // mode: 'save', 'edit', or 'other_owner'
+  updateWidgetButtonState(btn, mode, lead) {
     btn.classList.remove('salespulse-loading-btn');
 
     // Get the button container to add/update stage badge
     const btnContainer = btn.closest('.salespulse-widget-btn-container');
 
-    if (isEditMode && lead) {
+    if (mode === 'edit' && lead) {
+      btn.disabled = false;
       btn.classList.add('salespulse-edit-btn');
+      btn.classList.remove('salespulse-owner-btn');
       btn.innerHTML = `
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
@@ -798,8 +991,29 @@ class SalesPulseInjector {
       if (btnContainer && lead.stage) {
         this.addStageBadge(btnContainer, lead.stage);
       }
-    } else {
+    } else if (mode === 'other_owner' && lead) {
+      // Lead belongs to another sales agent - show their name
+      btn.disabled = true;
       btn.classList.remove('salespulse-edit-btn');
+      btn.classList.add('salespulse-owner-btn');
+      const ownerName = lead.owner_first_name || 'Other';
+      btn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+        ${this.escapeHtml(ownerName)}
+      `;
+      btn.title = `This lead is assigned to ${ownerName}`;
+
+      // Add stage badge if lead has stage info
+      if (btnContainer && lead.stage) {
+        this.addStageBadge(btnContainer, lead.stage);
+      }
+    } else {
+      btn.disabled = false;
+      btn.classList.remove('salespulse-edit-btn');
+      btn.classList.remove('salespulse-owner-btn');
       btn.innerHTML = `
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
@@ -1266,6 +1480,7 @@ class SalesPulseInjector {
     if (!this.baseUrl || !this.apiToken) {
       this.existingLead = null;
       this.isEditMode = false;
+      this.isOtherOwner = false;
       return;
     }
 
@@ -1281,17 +1496,29 @@ class SalesPulseInjector {
         const data = await response.json();
         if (data.success && data.exists && data.lead) {
           this.existingLead = data.lead;
-          this.isEditMode = true;
-          console.log('SalesPulse: Found existing lead:', this.existingLead);
+
+          // Check if this lead belongs to the current user or another user
+          if (data.lead.is_owned_by_current_user) {
+            this.isEditMode = true;
+            this.isOtherOwner = false;
+            console.log('SalesPulse: Found existing lead (owned by current user):', this.existingLead);
+          } else {
+            this.isEditMode = false;
+            this.isOtherOwner = true;
+            this.otherOwnerName = data.lead.owner_first_name || 'Other';
+            console.log('SalesPulse: Lead owned by another user:', this.otherOwnerName);
+          }
         } else {
           this.existingLead = null;
           this.isEditMode = false;
+          this.isOtherOwner = false;
         }
       }
     } catch (error) {
       console.error('SalesPulse: Error checking for existing lead:', error);
       this.existingLead = null;
       this.isEditMode = false;
+      this.isOtherOwner = false;
     }
   }
 
@@ -1301,11 +1528,30 @@ class SalesPulseInjector {
 
     const btnContainer = document.getElementById('salespulse-btn-container');
 
-    btn.disabled = false;
     btn.classList.remove('salespulse-loading-btn');
 
-    if (this.isEditMode && this.existingLead) {
+    if (this.isOtherOwner && this.existingLead) {
+      // Lead belongs to another sales agent - show their name
+      btn.disabled = true;
+      btn.classList.remove('salespulse-edit-btn');
+      btn.classList.add('salespulse-owner-btn');
+      btn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+        ${this.escapeHtml(this.otherOwnerName)}
+      `;
+      btn.title = `This lead is assigned to ${this.otherOwnerName}`;
+
+      // Add stage badge if lead has stage info
+      if (btnContainer && this.existingLead.stage) {
+        this.addInboxStageBadge(btnContainer, this.existingLead.stage);
+      }
+    } else if (this.isEditMode && this.existingLead) {
+      btn.disabled = false;
       btn.classList.add('salespulse-edit-btn');
+      btn.classList.remove('salespulse-owner-btn');
       btn.innerHTML = `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
@@ -1319,7 +1565,9 @@ class SalesPulseInjector {
         this.addInboxStageBadge(btnContainer, this.existingLead.stage);
       }
     } else {
+      btn.disabled = false;
       btn.classList.remove('salespulse-edit-btn');
+      btn.classList.remove('salespulse-owner-btn');
       btn.innerHTML = `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
@@ -1415,6 +1663,18 @@ class SalesPulseInjector {
         box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
       }
 
+      /* Owner button - shows when lead belongs to another sales agent */
+      .salespulse-save-btn.salespulse-owner-btn {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        cursor: default;
+        opacity: 0.9;
+      }
+
+      .salespulse-save-btn.salespulse-owner-btn:hover {
+        transform: none;
+        box-shadow: none;
+      }
+
       /* Loading button */
       .salespulse-loading-btn {
         background: #9ca3af;
@@ -1491,6 +1751,18 @@ class SalesPulseInjector {
 
       .salespulse-widget-btn.salespulse-edit-btn:hover:not(:disabled) {
         box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+      }
+
+      /* Owner button - shows when lead belongs to another sales agent */
+      .salespulse-widget-btn.salespulse-owner-btn {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        cursor: default;
+        opacity: 0.9;
+      }
+
+      .salespulse-widget-btn.salespulse-owner-btn:hover {
+        transform: none;
+        box-shadow: none;
       }
 
       .salespulse-widget-btn.salespulse-loading-btn {
@@ -1907,6 +2179,107 @@ class SalesPulseInjector {
         margin: 20px 0 12px;
         padding-top: 16px;
         border-top: 1px solid #e5e7eb;
+      }
+
+      /* Message List Badges */
+      .salespulse-list-badge-container {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        margin-top: 2px;
+      }
+
+      .salespulse-list-stage-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 1px 5px;
+        border-radius: 6px;
+        font-size: 8px;
+        font-weight: 600;
+        color: white;
+        text-transform: uppercase;
+        letter-spacing: 0.2px;
+        white-space: nowrap;
+        text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        max-width: 75px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.2;
+      }
+
+      .salespulse-list-owner-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        padding: 1px 5px;
+        border-radius: 6px;
+        font-size: 8px;
+        font-weight: 500;
+        background: #e5e7eb;
+        color: #374151;
+        white-space: nowrap;
+        max-width: 75px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.2;
+      }
+
+      .salespulse-list-owner-badge svg {
+        flex-shrink: 0;
+        width: 8px;
+        height: 8px;
+      }
+
+      .salespulse-list-fresh-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        padding: 1px 5px;
+        border-radius: 6px;
+        font-size: 8px;
+        font-weight: 600;
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        text-transform: uppercase;
+        letter-spacing: 0.2px;
+        white-space: nowrap;
+        text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        line-height: 1.2;
+      }
+
+      .salespulse-list-fresh-badge svg {
+        flex-shrink: 0;
+        width: 8px;
+        height: 8px;
+      }
+
+      .salespulse-list-loading-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        padding: 2px 6px;
+        border-radius: 8px;
+        font-size: 9px;
+        font-weight: 500;
+        background: #e5e7eb;
+        color: #6b7280;
+      }
+
+      .salespulse-list-loading-badge .sp-list-spinner {
+        width: 8px;
+        height: 8px;
+        border: 1.5px solid rgba(107, 114, 128, 0.3);
+        border-top-color: #6b7280;
+        border-radius: 50%;
+        animation: sp-spin 0.8s linear infinite;
+      }
+
+      /* Ensure badges don't break layout */
+      .ThreadDetailsRow .Container.Subtitle {
+        flex-wrap: wrap;
       }
     `;
 
@@ -2771,6 +3144,9 @@ class SalesPulseInjector {
         } else {
           this.updateButtonState();
         }
+
+        // Refresh list badges to show the new/updated lead
+        this.refreshListBadges();
       }
 
       // Show success
