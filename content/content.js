@@ -929,7 +929,7 @@ class SalesPulseInjector {
 
     try {
       // Check by username since we don't have the chat URL
-      const response = await fetch(`${this.getApiUrl()}/customers/check?freelancer_username=${encodeURIComponent(username)}`, {
+      const response = await fetch(`${this.getApiUrl()}/customers/check?platform_username=${encodeURIComponent(username)}`, {
         headers: {
           'Authorization': `Bearer ${this.apiToken}`,
           'Accept': 'application/json'
@@ -1123,7 +1123,7 @@ class SalesPulseInjector {
   // Fetch fresh lead data from API for edit mode
   async fetchFreshLeadData(username) {
     try {
-      const response = await fetch(`${this.getApiUrl()}/customers/check?freelancer_username=${encodeURIComponent(username)}`, {
+      const response = await fetch(`${this.getApiUrl()}/customers/check?platform_username=${encodeURIComponent(username)}`, {
         headers: {
           'Authorization': `Bearer ${this.apiToken}`,
           'Accept': 'application/json'
@@ -1142,7 +1142,7 @@ class SalesPulseInjector {
               amount: lead.amount,
               currency: lead.currency || 'USD',
               description: lead.description,
-              freelancer_chat_url: lead.freelancer_chat_url,
+              platform_chat_url: lead.platform_chat_url || lead.freelancer_chat_url,
               project_url: lead.project_url,
               lead_stage_id: lead.lead_stage_id,
               stage: lead.stage,
@@ -1183,7 +1183,7 @@ class SalesPulseInjector {
           amount: existingLead.amount,
           currency: existingLead.currency || 'USD',
           description: existingLead.description,
-          freelancer_chat_url: existingLead.freelancer_chat_url,
+          platform_chat_url: existingLead.platform_chat_url || existingLead.freelancer_chat_url,
           project_url: existingLead.project_url,
           lead_stage_id: existingLead.lead_stage_id,
           stage: existingLead.stage,
@@ -2649,7 +2649,7 @@ class SalesPulseInjector {
             amount: data.lead.amount,
             currency: data.lead.currency || 'USD',
             description: data.lead.description,
-            freelancer_chat_url: data.lead.freelancer_chat_url,
+            platform_chat_url: data.lead.platform_chat_url || data.lead.freelancer_chat_url,
             project_url: data.lead.project_url,
             lead_stage_id: data.lead.lead_stage_id,
             stage: data.lead.stage,
@@ -2733,12 +2733,12 @@ class SalesPulseInjector {
       formData = {
         leadId: this.existingLead.id || '',
         customerName: this.existingLead.customer?.name || pageData.customerName,
-        freelancerUsername: this.existingLead.customer?.freelancer_username || pageData.freelancerUsername,
+        freelancerUsername: this.existingLead.customer?.platform_username || this.existingLead.customer?.freelancer_username || pageData.freelancerUsername,
         projectTitle: this.existingLead.title || pageData.projectTitle,
-        chatUrl: this.existingLead.freelancer_chat_url || pageData.chatUrl,
+        chatUrl: this.existingLead.platform_chat_url || this.existingLead.freelancer_chat_url || pageData.chatUrl,
         projectUrl: this.existingLead.project_url || pageData.projectUrl,
         country: this.existingLead.customer?.country || '',
-        joinedDate: this.existingLead.customer?.freelancer_join_date || '',
+        joinedDate: this.existingLead.customer?.platform_join_date || this.existingLead.customer?.freelancer_join_date || '',
         avatarUrl: this.existingLead.customer?.avatar_url || '',
         amount: this.existingLead.amount || '',
         currency: this.existingLead.currency || 'USD',
@@ -3082,16 +3082,16 @@ class SalesPulseInjector {
     try {
       const payload = {
         customer_name: customerName,
-        freelancer_username: username || null,
-        freelancer_profile_url: username ? `https://www.freelancer.com/u/${username}` : null,
+        platform_username: username || null,
+        platform_profile_url: username ? `https://www.freelancer.com/u/${username}` : null,
         avatar_url: avatarUrl || null,
         country: country || null,
-        freelancer_join_date: joinedDate || null,
+        platform_join_date: joinedDate || null,
         lead_title: leadTitle || null,
         lead_amount: amount ? parseFloat(amount) : null,
         lead_currency: currency || 'USD',
         lead_stage_id: stageId ? parseInt(stageId) : null,
-        freelancer_chat_url: chatUrl || null,
+        platform_chat_url: chatUrl || null,
         project_url: projectUrl || null,
         description: notes || null
       };
@@ -3129,7 +3129,7 @@ class SalesPulseInjector {
           amount: data.lead.amount,
           currency: data.lead.currency || 'USD',
           description: data.lead.description,
-          freelancer_chat_url: data.lead.freelancer_chat_url,
+          platform_chat_url: data.lead.platform_chat_url || data.lead.freelancer_chat_url,
           project_url: data.lead.project_url,
           lead_stage_id: data.lead.lead_stage_id,
           stage: data.lead.stage,
