@@ -7,9 +7,8 @@ class SalesPulseInjector {
     this.stages = [];
     this.currencies = [];
     this.baseCurrency = 'USD';
-    this.freelancerSource = null;
-    this.freelancerAccounts = [];
-    this.defaultFreelancerAccountId = null;
+    this.freelancerSourceId = null;
+    this.freelancerAccountId = null;
     this.buttonInjected = false;
     this.observerActive = false;
     this.profileDataCache = {};
@@ -67,7 +66,7 @@ class SalesPulseInjector {
           return;
         }
 
-        chrome.storage.sync.get(['baseUrl', 'apiToken'], (result) => {
+        chrome.storage.sync.get(['baseUrl', 'apiToken', 'freelancerAccountId'], (result) => {
           if (chrome.runtime.lastError) {
             console.warn('SalesPulse: Extension context invalidated. Please refresh the page.');
             this.contextInvalidated = true;
@@ -76,6 +75,7 @@ class SalesPulseInjector {
           }
           this.baseUrl = result.baseUrl || '';
           this.apiToken = result.apiToken || '';
+          this.freelancerAccountId = result.freelancerAccountId || null;
           resolve();
         });
       } catch (error) {
@@ -2616,9 +2616,7 @@ class SalesPulseInjector {
 
       if (response.ok) {
         const data = await response.json();
-        this.freelancerSource = data.freelancer_source || null;
-        this.freelancerAccounts = this.freelancerSource?.accounts || [];
-        this.defaultFreelancerAccountId = data.default_freelancer_account?.id || null;
+        this.freelancerSourceId = data.freelancer_source?.id || null;
       }
     } catch (error) {
       console.error('SalesPulse: Failed to load lead sources', error);
@@ -2776,7 +2774,6 @@ class SalesPulseInjector {
         amount: this.existingLead.amount || '',
         currency: this.existingLead.currency || 'USD',
         stageId: this.existingLead.lead_stage_id || '',
-        leadSourceAccountId: this.existingLead.lead_source_account_id || '',
         description: this.existingLead.description || '',
         updatedAt: this.existingLead.updated_at || ''
       };
@@ -2921,15 +2918,6 @@ class SalesPulseInjector {
               ${this.stages.length > 0
                 ? this.stages.map(s => `<option value="${s.id}" ${formData.stageId == s.id ? 'selected' : ''}>${this.escapeHtml(s.name)}</option>`).join('')
                 : '<option value="">Loading stages...</option>'}
-            </select>
-          </div>
-
-          <div class="salespulse-form-group">
-            <label>Freelancer Account</label>
-            <select class="salespulse-form-select" id="sp-freelancer-account">
-              ${this.freelancerAccounts.length > 0
-                ? this.freelancerAccounts.map(a => `<option value="${a.id}" ${(formData.leadSourceAccountId || this.defaultFreelancerAccountId) == a.id ? 'selected' : ''}>${this.escapeHtml(a.name)}${a.username ? ' (@' + this.escapeHtml(a.username) + ')' : ''}${a.is_default ? ' (Default)' : ''}</option>`).join('')
-                : '<option value="">No accounts configured</option>'}
             </select>
           </div>
 
@@ -3105,7 +3093,6 @@ class SalesPulseInjector {
     const amount = document.getElementById('sp-amount').value;
     const currency = document.getElementById('sp-currency').value;
     const stageId = document.getElementById('sp-stage').value;
-    const freelancerAccountId = document.getElementById('sp-freelancer-account')?.value || '';
     const chatUrl = document.getElementById('sp-chat-url').value.trim();
     const projectUrl = document.getElementById('sp-project-url').value.trim();
     const notes = document.getElementById('sp-notes').value.trim();
@@ -3135,8 +3122,8 @@ class SalesPulseInjector {
         lead_amount: amount ? parseFloat(amount) : null,
         lead_currency: currency || 'USD',
         lead_stage_id: stageId ? parseInt(stageId) : null,
-        lead_source_id: this.freelancerSource?.id || null,
-        lead_source_account_id: freelancerAccountId ? parseInt(freelancerAccountId) : null,
+        lead_source_id: this.freelancerSourceId || null,
+        lead_source_account_id: this.freelancerAccountId ? parseInt(this.freelancerAccountId) : null,
         platform_chat_url: chatUrl || null,
         project_url: projectUrl || null,
         description: notes || null

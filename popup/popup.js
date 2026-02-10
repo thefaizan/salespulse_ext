@@ -9,6 +9,8 @@ class SalesPulsePopup {
     this.currentVersion = chrome.runtime.getManifest().version;
     this.latestVersion = null;
     this.downloadUrl = null;
+    this.freelancerAccounts = [];
+    this.selectedFreelancerAccountId = null;
 
     // API path is hardcoded
     this.apiPath = '/api/v1/extensions/crm';
@@ -35,17 +37,18 @@ class SalesPulsePopup {
   // Storage helpers - using chrome.storage.sync for persistence across reinstalls
   async loadSettings() {
     return new Promise((resolve) => {
-      chrome.storage.sync.get(['baseUrl', 'apiToken'], (result) => {
+      chrome.storage.sync.get(['baseUrl', 'apiToken', 'freelancerAccountId'], (result) => {
         this.baseUrl = result.baseUrl || '';
         this.apiToken = result.apiToken || '';
+        this.selectedFreelancerAccountId = result.freelancerAccountId || null;
         resolve();
       });
     });
   }
 
-  async saveSettings(baseUrl, apiToken) {
+  async saveSettings(baseUrl, apiToken, freelancerAccountId = null) {
     return new Promise((resolve) => {
-      chrome.storage.sync.set({ baseUrl, apiToken }, resolve);
+      chrome.storage.sync.set({ baseUrl, apiToken, freelancerAccountId }, resolve);
     });
   }
 
@@ -226,6 +229,13 @@ class SalesPulsePopup {
     if (viewName === 'settings') {
       document.getElementById('api-url').value = this.baseUrl;
       document.getElementById('api-token').value = this.apiToken;
+
+      // If already connected, load freelancer accounts
+      if (this.user && this.freelancerAccounts.length === 0) {
+        this.loadFreelancerAccounts();
+      } else {
+        this.updateFreelancerAccountDropdown();
+      }
     }
   }
 
@@ -297,10 +307,48 @@ class SalesPulsePopup {
     }
   }
 
+  // Load freelancer accounts from API
+  async loadFreelancerAccounts() {
+    if (!this.baseUrl || !this.apiToken) return;
+
+    try {
+      const data = await this.apiRequest('/lead-sources?slug=freelancer');
+      this.freelancerAccounts = data.freelancer_source?.accounts || [];
+      this.updateFreelancerAccountDropdown();
+    } catch (error) {
+      console.log('Failed to load freelancer accounts:', error.message);
+      this.freelancerAccounts = [];
+    }
+  }
+
+  // Update the freelancer account dropdown
+  updateFreelancerAccountDropdown() {
+    const select = document.getElementById('freelancer-account');
+    const group = document.getElementById('freelancer-account-group');
+
+    if (!select || !group) return;
+
+    if (this.freelancerAccounts.length > 0) {
+      group.style.display = 'block';
+      select.innerHTML = this.freelancerAccounts.map(account => {
+        const label = account.username
+          ? `${account.name} (@${account.username})${account.is_default ? ' (Default)' : ''}`
+          : `${account.name}${account.is_default ? ' (Default)' : ''}`;
+        const selected = this.selectedFreelancerAccountId == account.id ? 'selected' : '';
+        return `<option value="${account.id}" ${selected}>${label}</option>`;
+      }).join('');
+    } else {
+      group.style.display = 'none';
+      select.innerHTML = '<option value="">-- No accounts configured --</option>';
+    }
+  }
+
   // Settings handlers
   async handleSaveSettings() {
     let baseUrl = document.getElementById('api-url').value.trim();
     const apiToken = document.getElementById('api-token').value.trim();
+    const freelancerAccountSelect = document.getElementById('freelancer-account');
+    const freelancerAccountId = freelancerAccountSelect?.value || null;
 
     if (!baseUrl || !apiToken) {
       this.showError('Please fill in both CRM Base URL and Token');
@@ -312,7 +360,8 @@ class SalesPulsePopup {
 
     this.baseUrl = baseUrl;
     this.apiToken = apiToken;
-    await this.saveSettings(baseUrl, apiToken);
+    this.selectedFreelancerAccountId = freelancerAccountId;
+    await this.saveSettings(baseUrl, apiToken, freelancerAccountId);
 
     // Test the connection
     await this.testConnection();
@@ -330,6 +379,9 @@ class SalesPulsePopup {
       if (connected) {
         statusEl.classList.add('success');
         statusEl.textContent = `Connected as ${this.user.name}`;
+
+        // Load freelancer accounts after successful connection
+        await this.loadFreelancerAccounts();
 
         // Also check for updates after successful connection
         await this.checkForUpdates();

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SalesPulse - Freelancer Lead Capture",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Capture leads directly from Freelancer.com chats and save them to your SalesPulse CRM",
   "icons": {
     "16": "icons/icon16.png",
