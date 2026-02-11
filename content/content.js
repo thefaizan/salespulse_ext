@@ -2861,9 +2861,9 @@ class SalesPulseInjector {
           <div id="salespulse-error-msg" class="salespulse-status error" style="display: none;"></div>
 
           <div class="salespulse-form-group">
-            <label>Customer Name <span class="required">*</span></label>
+            <label>Contact Name <span class="required">*</span></label>
             <input type="text" class="salespulse-form-input" id="sp-customer-name"
-                   value="${this.escapeHtml(formData.customerName)}" placeholder="Customer name">
+                   value="${this.escapeHtml(formData.customerName)}" placeholder="Contact name">
           </div>
 
           <div class="salespulse-form-group">
@@ -3099,7 +3099,7 @@ class SalesPulseInjector {
     const avatarUrl = document.getElementById('sp-avatar-url')?.value || '';
 
     if (!customerName) {
-      this.showError('Customer name is required');
+      this.showError('Contact name is required');
       return;
     }
 
